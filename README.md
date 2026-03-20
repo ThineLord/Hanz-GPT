@@ -36,7 +36,7 @@ This fork keeps the “simple + readable” core, while making it easier to run 
 - `config/` – optional config presets (extend this folder to make runs reproducible)
 - `checkpoints/` – archived checkpoints (avoid accidental overwrite of `out/ckpt.pt`)
 - `data/` – dataset preparation/processed artifacts (depends on your dataset choice)
-- `assets/` – images, figures, etc.
+- `assets/` – images, figures, etc. (optional)
 
 ---
 
@@ -50,14 +50,9 @@ source .venv/bin/activate  # macOS/Linux
 ```
 
 ### 2) Install dependencies
-If you have a requirements file:
+Install all required packages:
 ```bash
 pip install -r requirements.txt
-```
-
-If not, install core packages manually:
-```bash
-pip install torch numpy
 ```
 
 ---
@@ -77,6 +72,24 @@ This repo follows the nanoGPT philosophy: you preprocess your dataset into a tok
 
 ---
 
+## Quick command cheatsheet
+
+```bash
+# train (CUDA)
+python train.py --batch_size=32 --compile=False
+
+# train (MPS)
+python train.py --device=mps --dtype=float32 --compile=False
+
+# sample from checkpoint
+python sample.py --out_dir=out --num_samples=5 --start="Hello"
+
+# benchmark
+python bench.py --device=cpu --compile=False
+```
+
+---
+
 ## Training
 
 ### Single GPU (CUDA)
@@ -87,7 +100,7 @@ python train.py --batch_size=32 --compile=False
 ### macOS (MPS)
 MPS usually works best with float32 and often needs `compile=False`:
 ```bash
-python train.py device=mps dtype=float32 compile=False
+python train.py --device=mps --dtype=float32 --compile=False
 ```
 
 ### Distributed Data Parallel (DDP) example
@@ -111,7 +124,7 @@ This fork also supports archiving into `checkpoints/` to avoid overwriting usefu
 After training finishes and you have a checkpoint:
 
 ```bash
-python sample.py --out_dir out --num_samples 5 --start "Hello"
+python sample.py --out_dir=out --num_samples=5 --start="Hello"
 ```
 
 If you initialize from OpenAI GPT-2 weights, check your `sample.py` arguments and tokenizer setup (depends on `meta.pkl` vs GPT-2 tokenizer).
@@ -120,9 +133,15 @@ If you initialize from OpenAI GPT-2 weights, check your `sample.py` arguments an
 
 ## Troubleshooting
 
-- **Mac MPS issues**: try `dtype=float32` and `compile=False`.
+- **Mac MPS issues**: try `--dtype=float32` and `--compile=False`.
 - **Out of memory**: reduce `batch_size`, or use gradient accumulation with config overrides.
 - **Dataset mismatch**: ensure `meta.pkl` and tokenization are consistent, and your `vocab_size` is correct.
+
+## Minimal smoke test
+
+```bash
+python3 -m unittest tests/test_configurator.py
+```
 
 ---
 
@@ -171,7 +190,7 @@ If you initialize from OpenAI GPT-2 weights, check your `sample.py` arguments an
 - `config/` — 可选配置预设（用来让跑实验更可复现）
 - `checkpoints/` — 归档 checkpoint（避免被覆盖）
 - `data/` — 数据集预处理/结果产出目录（取决于你用什么数据）
-- `assets/` — 图片、图表等
+- `assets/` — 图片、图表等（可选）
 
 ---
 
@@ -185,14 +204,9 @@ source .venv/bin/activate  # macOS/Linux
 ```
 
 ### 2）安装依赖
-有 requirements：
+安装完整依赖：
 ```bash
 pip install -r requirements.txt
-```
-
-没有的话，至少安装：
-```bash
-pip install torch numpy
 ```
 
 ---
@@ -213,6 +227,24 @@ dataset = '<dataset_name>'
 
 ---
 
+## 常用命令速查
+
+```bash
+# 训练（CUDA）
+python train.py --batch_size=32 --compile=False
+
+# 训练（MPS）
+python train.py --device=mps --dtype=float32 --compile=False
+
+# checkpoint 采样
+python sample.py --out_dir=out --num_samples=5 --start="你好"
+
+# 基准测试
+python bench.py --device=cpu --compile=False
+```
+
+---
+
 ## 训练
 
 ### 单卡 CUDA
@@ -223,7 +255,7 @@ python train.py --batch_size=32 --compile=False
 ### macOS（MPS）
 MPS 通常更稳的是 float32，并且经常需要关闭 compile：
 ```bash
-python train.py device=mps dtype=float32 compile=False
+python train.py --device=mps --dtype=float32 --compile=False
 ```
 
 ### DDP 示例
@@ -246,7 +278,7 @@ torchrun --standalone --nproc_per_node=4 train.py
 
 有 checkpoint 后可以这样生成：
 ```bash
-python sample.py --out_dir out --num_samples 5 --start "你好"
+python sample.py --out_dir=out --num_samples=5 --start="你好"
 ```
 
 如果你从 OpenAI GPT-2 权重初始化，注意 tokenization（`meta.pkl` vs GPT-2 tokenizer）对应一致。
@@ -255,9 +287,15 @@ python sample.py --out_dir out --num_samples 5 --start "你好"
 
 ## 常见问题
 
-- MPS 各种问题：优先试 `dtype=float32`、`compile=False`
+- MPS 各种问题：优先试 `--dtype=float32`、`--compile=False`
 - 显存不够：降低 `batch_size`，或用 config 调整梯度累积
 - `meta.pkl` 不匹配：确保词表、tokenizer、处理流程一致
+
+## 最小 smoke 测试
+
+```bash
+python3 -m unittest tests/test_configurator.py
+```
 
 ---
 

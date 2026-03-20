@@ -2,32 +2,32 @@
 A much shorter version of train.py for benchmarking
 """
 import os
-from contextlib import nullcontext
 import numpy as np
 import time
 import torch
 from model import GPTConfig, GPT
+from runtime_utils import build_autocast_context, setup_torch_runtime
 
 # -----------------------------------------------------------------------------
 batch_size = 12
 block_size = 1024
 bias = False
+n_layer = 12
+n_head = 12
+n_embd = 768
 real_data = True
 seed = 1337
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32' or 'bfloat16' or 'float16'
 compile = True # use PyTorch 2.0 to compile the model to be faster
 profile = False # use pytorch profiler, or just simple benchmarking?
+burnin_steps = 10
+bench_steps = 20
 exec(open('configurator.py').read()) # overrides from command line or config file
 # -----------------------------------------------------------------------------
 
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
-torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
-torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
-device_type = 'cuda' if 'cuda' in device else 'cpu' # for later use in torch.autocast
-ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
+setup_torch_runtime(seed, device)
+device_type, ptdtype, ctx = build_autocast_context(device, dtype)
 
 # data loading init
 if real_data:
@@ -39,7 +39,10 @@ if real_data:
         ix = torch.randint(len(data) - block_size, (batch_size,))
         x = torch.stack([torch.from_numpy((data[i:i+block_size]).astype(np.int64)) for i in ix])
         y = torch.stack([torch.from_numpy((data[i+1:i+1+block_size]).astype(np.int64)) for i in ix])
-        x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
+        if device_type == 'cuda':
+            x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(device, non_blocking=True)
+        else:
+            x, y = x.to(device), y.to(device)
         return x, y
 else:
     # alternatively, if fixed data is desired to not care about data loading
@@ -50,7 +53,7 @@ else:
 # model init
 gptconf = GPTConfig(
     block_size = block_size, # how far back does the model look? i.e. context size
-    n_layer = 12, n_head = 12, n_embd = 768, # size of the model
+    n_layer = n_layer, n_head = n_head, n_embd = n_embd, # size of the model
     dropout = 0, # for determinism
     bias = bias,
 )
@@ -69,8 +72,11 @@ if profile:
     # - api https://pytorch.org/docs/stable/profiler.html#torch.profiler.profile
     wait, warmup, active = 5, 5, 5
     num_steps = wait + warmup + active
+    activities = [torch.profiler.ProfilerActivity.CPU]
+    if device_type == 'cuda':
+        activities.append(torch.profiler.ProfilerActivity.CUDA)
     with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        activities=activities,
         schedule=torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=1),
         on_trace_ready=torch.profiler.tensorboard_trace_handler('./bench_log'),
         record_shapes=False,
@@ -96,8 +102,9 @@ if profile:
 else:
 
     # simple benchmarking
-    torch.cuda.synchronize()
-    for stage, num_steps in enumerate([10, 20]): # burnin, then benchmark
+    if device_type == 'cuda':
+        torch.cuda.synchronize()
+    for stage, num_steps in enumerate([burnin_steps, bench_steps]): # burnin, then benchmark
         t0 = time.time()
         X, Y = get_batch('train')
         for k in range(num_steps):
@@ -109,7 +116,8 @@ else:
             optimizer.step()
             lossf = loss.item()
             print(f"{k}/{num_steps} loss: {lossf:.4f}")
-        torch.cuda.synchronize()
+        if device_type == 'cuda':
+            torch.cuda.synchronize()
         t1 = time.time()
         dt = t1-t0
         mfu = model.estimate_mfu(batch_size * 1 * num_steps, dt)
